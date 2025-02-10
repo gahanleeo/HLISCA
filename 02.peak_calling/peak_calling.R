@@ -6,6 +6,13 @@
 # Description: None
 ##############################################################################
 
+# Chia Han Edit 
+RDS file:
+# /data/Choi_lung/lbl/SHARE-seq/correction/pbmc_integrate_all_removal_combined_res1_annot.rds
+# ml load R/4.1
+
+
+
 library(Seurat)
 library(Signac)
 library(EnsDb.Hsapiens.v86)
@@ -29,13 +36,18 @@ DefaultAssay(lung_4) <- "ATAC"
 
 # call peaks using MACS2
 
-peaks <- CallPeaks(lung_4, group.by = "final_cluster")
+#peaks <- CallPeaks(lung_4, group.by = "final_cluster")
+peaks <- CallPeaks(lung_4, group.by = "CellType")
+
 
 # remove peaks on nonstandard chromosomes and in genomic blacklist regions
 peaks <- keepStandardChromosomes(peaks, pruning.mode = "coarse")
 peaks <- subsetByOverlaps(x = peaks, ranges = blacklist_hg38_unified, invert = TRUE)
 
 write.csv(peaks,"peaks_by_cell_types.csv")
+
+# SAVE now so that it will be benficiant downstream
+saveRDS(peaks,'')
 
 # quantify counts in each peak
 macs2_counts <- FeatureMatrix(
