@@ -100,7 +100,7 @@ lung_4 <- RunTFIDF(lung_4)
 lung_4 <- RunSVD(lung_4)
 
 # saveRDS(lung_4, file = "DAR_results/peak_called_by_cell_types_smoking_CHL.rds")
-# lung_4 <- readRDS("peak_called_by_cell_types_smoking.rds")
+# lung_4 <- readRDS("DAR_results/peak_called_by_cell_types_smoking_CHL.rds")
 
 
 print('saved RDS')
@@ -205,65 +205,184 @@ write.table(DAR.new, file = "DAR_results/SData7_DAR_LR_smoking_w_CT.tsv",
 #### CUT OFFF testing files
 #########################################################################################################
 
-darnew <- read.delim('DAR_results/SData7_DAR_LR_smoking_w_CT.tsv',header = T)
-darnew <- darnew[,c(1,9:12)]
+dar.new <- read.delim('DAR_results/SData7_DAR_LR_smoking_w_CT.tsv',header = T)
+dar.new <- dar.new[,c(1,9:12)]
+
+Ori.list <- list.files('/data/Choi_lung/lbl/SHARE-seq/R/Seurat_DAR_LR',full.names = T)
+
+# Original <- read.csv('/data/leec20/Jiyeon_lab_single_cell_quest/Original_DAR_list.csv',header = F)
+
+Ori_f <- data.frame()
+
+for (j in Ori.list){
+  # j <- Ori.list[23]
+  df <- read.csv(j)
+  df <- df %>% filter(p_val_adj <= 0.05)
+  if (nrow(df) == 0){
+   print('ohoh')
+  }else{
+  df$Cell <- gsub('/data/Choi_lung/lbl/SHARE-seq/R/Seurat_DAR_LR/|.smoking.DAR.LR.adjseqdepth.csv','',j)
+  Ori_f <- rbind(Ori_f,df)
+  }
+}
 
 
-Original <- read.csv('/data/leec20/Jiyeon_lab_single_cell_quest/Original_DAR_list.csv',header = F)
 
 # 174 same position 
-intersect(darnew$X,Original$V1)
+intersect(dar.new$X,Ori_f$X)
 
 
 # Split into three columns
 
-Original <- Original %>%
-  separate(V1, into = c("chr", "start", "end"), sep = "-", convert = TRUE)
-
-
-Original$width <- Original$end - Original$start
-
-# something is wired: like chr2-208960769-20896097614 is way beyond end of chr2
-
-Original <- Original[Original$width < 1000000, ]
-
-
+Ori_f <- Ori_f %>%
+  separate(X, into = c("chr", "start", "end"), sep = "-", convert = TRUE)
 
 # since it's kind of few base different, maybe use overlap
 
 library(GenomicRanges)
 
-# Compute widths for both datasets
-darnew$width <- darnew$end - darnew$start
-
 # Convert to GRanges
-darnew_gr <- GRanges(seqnames = darnew$seqnames, 
-                     ranges = IRanges(start = darnew$start, end = darnew$end))
+dar.new_gr <- GRanges(seqnames = dar.new$seqnames, 
+                     ranges = IRanges(start = dar.new$start, end = dar.new$end))
 
-Original_gr <- GRanges(seqnames = Original$chr, 
-                      ranges = IRanges(start = Original$start, end = Original$end))
+Ori_f_gr <- GRanges(seqnames = Ori_f$chr, 
+                      ranges = IRanges(start = Ori_f$start, end = Ori_f$end))
 
 ########################################
 # findOverlaps(query, subject,...)
 ########################################
 
 # Find close matches (≤500bp)
-proximate_hits <- findOverlaps(darnew_gr, Original_gr, maxgap = 500, type = "any")
+proximate_hits <- findOverlaps(dar.new_gr, Ori_f_gr, maxgap = 500, type = "any")
+
+mtlist <- data.frame(proximate_hits)
+nrow(dar.new) - unique(mtlist$queryHits) %>% length()
+
+
+# Do summary table
+
+Ori_f <- data.frame()
+for (j in Ori.list){
+  # j <- Ori.list[23]
+  df <- read.csv(j)
+  df <- df %>% filter(p_val_adj <= 0.05)
+  if (nrow(df) == 0){
+    print('ohoh')
+  }else{
+    df$Cell <- gsub('/data/Choi_lung/lbl/SHARE-seq/R/Seurat_DAR_LR/|.smoking.DAR.LR.adjseqdepth.csv','',j)
+    Ori_f <- rbind(Ori_f,df)
+  }
+}
+
+
+# get the unique match X 
+matched_X_dar_new <- unique(dar.new$X[mtlist$queryHits])
+matched_X_Ori_f <- unique(Ori_f$X[mtlist$subjectHits])
+
+summary_s1 <- data.frame(
+  DataSet = "DAR",
+  Chia_DAR_total_nb = nrow(dar.new),
+  Chia_DAR_unique_total_nb = length(unique(dar.new$X)),
+  EP_total_nb = nrow(Ori_f),
+  EP_unique_total_nb = length(unique(Ori_f$X)),
+  Chia_DAR_new_discovery = length(unique(dar.new$X)) - length(matched_X_dar_new)
+  # EP_DAR_diff = length(unique(Ori_f$X)) - length(matched_X_Ori_f)
+  
+)
+
+#############################################
+#Compare the peaks results
+#############################################
+
+peaks_by_cell_Chl <- read.csv('Peak_and_motifBreaker_results/peaks_by_cell_types_CHL_chranno.csv')
+peaks_by_cell_Chl$combine_chr <- paste0(peaks_by_cell_Chl$seqnames,"-",peaks_by_cell_Chl$start,"-",peaks_by_cell_Chl$end)
+  
+# vs EP
+peaks_by_cell_EP <- read.csv("/vf/users/Choi_lung/SHARE-seq/Seurat_SHARE/peaks_analysis/peaks_by_cell_types_combined_22.csv")
+
+
+peaks_by_cell_EP$chr <- paste0('chr',peaks_by_cell_EP$chr)
+peaks_by_cell_EP$combine_chr <- paste0(peaks_by_cell_EP$chr,"-",peaks_by_cell_EP$start,"-",peaks_by_cell_EP$end)
+
+library(GenomicRanges)
+
+# Convert to GRanges
+
+peaks_by_cell_Chl_gr <- GRanges(seqnames = peaks_by_cell_Chl$seqnames, 
+                      ranges = IRanges(start = peaks_by_cell_Chl$start, end = peaks_by_cell_Chl$end))
+
+peaks_by_cell_EP_gr <- GRanges(seqnames = peaks_by_cell_EP$chr, 
+                    ranges = IRanges(start = peaks_by_cell_EP$start, end = peaks_by_cell_EP$end))
+
+
+# Find close matches (≤500bp)
+proximate_hits <- findOverlaps(peaks_by_cell_Chl_gr, peaks_by_cell_EP_gr, maxgap = 500, type = "any")
 
 # Extract matched rows
-matched_darnew <- darnew[queryHits(proximate_hits), ]
-matched_Original <- Original[subjectHits(proximate_hits), ]
+# matched_dar.new <- peaks_by_cell_Chl_gr[queryHits(proximate_hits), ]
+# matched_Ori_f <- peaks_by_cell_EP_gr[subjectHits(proximate_hits), ]
+
+mtlist <- data.frame(proximate_hits)
+# The key point is: the new finding on my analysis vs EP's 
+nrow(peaks_by_cell_Chl) - unique(mtlist$queryHits) %>% length()
+
+
+matched_X_peak <- unique(peaks_by_cell_Chl$combine_chr[mtlist$queryHits])
+
+
+summary_s2 <- data.frame(
+  DataSet = "Peak_by_celltype",
+  Chia_Peak_total_nb = nrow(peaks_by_cell_Chl),
+  Chia_Peak_unique_total_nb = length(unique(peaks_by_cell_Chl$combine_chr)),
+  
+  EP_total_nb = nrow(peaks_by_cell_EP),
+  EP_unique_total_nb = length(unique(peaks_by_cell_EP$combine_chr)),
+  Chia_DAR_new_discovery = length(unique(peaks_by_cell_Chl$combine_chr)) - length(matched_X_peak)
+
+)
+
+# 11408 new peaks on cell type in my result
+# make table
+
+##############################
+##############################
+
+peak_Smoking_CHL <- readRDS('DAR_results/peaks_smoking.rds')
+# vs EP
+peak_Smoking_EP <- readRDS('/data/Choi_lung/lbl/SHARE-seq/peak_called_by_cell_types_smoking.rds')
+peak_Smoking_EP_pk <- peak_Smoking_EP[["peaks"]]@ranges
+
+proximate_hits <- findOverlaps(peak_Smoking_CHL, peak_Smoking_EP_pk, maxgap = 500, type = "any")
 
 mtlist <- data.frame(proximate_hits)
 
-########################################
-########################################
+matched_X_peak <- unique(peak_Smoking_CHL[mtlist$queryHits])
 
-# the uniq region, some of the region is repeated 
-length(darnew$X %>% unique())
-# The number that match around the Original data  
-mtlist$queryHits %>% unique() %>% length()
-# around 602 new region 
-2448 - 1846
+summary_s3 <- data.frame(
+  DataSet = "Peak_by_cell_With_SMOKING",
+  Chia_Peak_total_nb = length(peak_Smoking_CHL),
+  Chia_Peak_unique_total_nb = length(unique(peak_Smoking_CHL)),
+  
+  EP_total_nb = length(peak_Smoking_EP_pk),
+  EP_unique_total_nb = length(unique(peak_Smoking_EP_pk)),
+  
+  Chia_DAR_new_discovery = length(unique(peak_Smoking_CHL)) - length(matched_X_peak)
+  
+)
+
+
+
+317837 - unique(mtlist$queryHits) %>% length()
+# 12889 differenct in cell type by smoking in my result
+
+summary_tot <- data.frame()
+
+names(summary_s1) <- c("DataSet","Chia_total","Chia_total_unique","EP_total","EP_total_unique","Chia_new_discovery")
+names(summary_s2) <- c("DataSet","Chia_total","Chia_total_unique","EP_total","EP_total_unique","Chia_new_discovery")
+names(summary_s3) <- c("DataSet","Chia_total","Chia_total_unique","EP_total","EP_total_unique","Chia_new_discovery")
+
+
+summary_tot <- rbind(summary_s1,summary_s2,summary_s3)
+
 
 
